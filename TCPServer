@@ -1,0 +1,231 @@
+import java.net.*;
+import java.io.*;
+import java.util.*;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+
+public class TCPServer {
+
+    ServerSocket serverSocket;
+    List<ClientHandler> clientHandlers = new ArrayList<>(); 
+    HashMap<String, String> keyValStore = new HashMap<>();
+    HashMap<String, Socket> clientMap = new HashMap<>();
+    String QUIT = "QUIT";   
+    String KEYS = "KEYS";
+    String PUT = "PUT";
+    String DELETE = "DELETE";
+    String GET = "GET";
+    String UPDATE = "UPDATE";
+    String KICK = "KICK";
+
+    public TCPServer(int port) throws IOException {
+        serverSocket = new ServerSocket(port);
+    }
+
+    public void start() {
+        System.out.println("TCPServer is on!");
+        while (true) {
+            try {
+                Socket clientSocket = serverSocket.accept();
+                System.out.println("New client connected: " + clientSocket);
+
+                ClientHandler clientHandler = new ClientHandler(clientSocket);
+                clientHandlers.add(clientHandler);
+                Thread handlerThread = new Thread(clientHandler);
+                handlerThread.start();
+
+            } catch (IOException e) {
+                System.out.println("Error.");
+                System.out.println(e.getMessage());
+            }
+        }
+    }
+
+    private class ClientHandler implements Runnable {
+        private Socket clientSocket;
+        private DataOutputStream dataOut;
+        private DataInputStream dataIn;
+        private String clientSocketIP;
+        private int clientSocketPort; 
+        private String clientKey;
+
+        public ClientHandler(Socket socket) {
+            this.clientSocket = socket;
+            this.clientSocketIP = clientSocket.getInetAddress().toString(); 
+            this.clientSocketPort = clientSocket.getPort(); 
+            clientMap.put(clientKey, clientSocket);
+        }
+
+         private String getClientKey(Socket socket) {
+            return socket.getInetAddress().getHostAddress() + ":" + socket.getPort();
+        }
+
+        public void kick(String port){
+            try{
+                clientMap.
+                clientSocket.close();
+            }catch(IOException e){
+                System.out.println("qate");
+            }
+        }
+        @Override
+        public void run() {
+            try {
+                dataOut = new DataOutputStream(clientSocket.getOutputStream());
+                dataIn = new DataInputStream(clientSocket.getInputStream());
+
+                handleClient();
+
+            } catch (IOException e) {
+                System.out.println("Error.");
+            } finally {
+                try {
+                    clientSocket.close();
+                } catch (IOException e) {
+                    System.out.println("Error.");
+                }
+            }
+        }
+
+        private void handleClient() throws IOException {
+            boolean active = true;
+            while (active) {
+                String inputLine = dataIn.readUTF();
+                String timestamp = getCurrentTimeStamp();
+                String clientSocketIP = clientSocket.getInetAddress().toString();
+                int clientSocketPort = clientSocket.getPort();
+
+                System.out.println(getLogHeader(clientSocketIP, clientSocketPort) + " Received: " + inputLine);
+
+                if (inputLine.toUpperCase().startsWith(QUIT)) {
+                    dataOut.writeUTF("Goodbye!");
+                    active = false;
+                } else if (inputLine.toUpperCase().startsWith(PUT)) {
+                    handlePutRequest(inputLine, clientSocketIP, clientSocketPort);
+                } else if (inputLine.toUpperCase().startsWith(DELETE)) {
+                    handleDelRequest(inputLine, clientSocketIP, clientSocketPort);
+                } else if (inputLine.toUpperCase().startsWith(GET)) {
+                    handleGetRequest(inputLine, clientSocketIP, clientSocketPort);
+                } else if (inputLine.toUpperCase().startsWith(KEYS)) {
+                    handleKeysRequest(clientSocketIP, clientSocketPort);
+                } else if (inputLine.toUpperCase().startsWith(UPDATE)) {
+                    handleUpdateRequest(inputLine, clientSocketIP, clientSocketPort);
+                } else if (inputLine.toUpperCase().startsWith(KICK)) {
+                    handleKickRequest(inputLine);
+                } else {
+                    dataOut.writeUTF("ERROR!");
+                }
+            }
+        }
+
+		private void handlePutRequest(String input, String clientSocketIP, int clientSocketPort) throws IOException {
+		    clientSocket.setSoTimeout(1000);  
+		    try {
+		        ArrayList<String> parts = new ArrayList<>(Arrays.asList(input.split(" ")));
+		        if (parts.size() == 3 && !keyValStore.containsKey(parts.get(1))){
+		            String key = parts.get(1);
+		            String value = parts.get(2);
+		            if (key.length() <= 10 && value.length() <= 10) { 
+		                keyValStore.put(key, value);
+		                dataOut.writeUTF("Key and value are successfully put.");
+		            } else {
+		                dataOut.writeUTF("ERROR: Key or value exceeds the maximum length of 10 characters.");
+		            }
+		        } else {
+		            dataOut.writeUTF("ERROR: Usage: PUT <key> <value>");
+		        }
+		    } catch (SocketTimeoutException e) {
+		        dataOut.writeUTF("Timeout.");
+		        System.out.println("Timeout for " + clientSocketIP + ":" + clientSocketPort);
+		    } finally {
+		        clientSocket.setSoTimeout(0);  
+		    }
+		}
+
+
+        private void handleDelRequest(String input, String clientSocketIP, int clientSocketPort) throws IOException {
+            ArrayList<String> parts = new ArrayList<>(Arrays.asList(input.split(" ")));
+            if (parts.size() == 2) {
+                String key = parts.get(1);
+                if (keyValStore.remove(key) != null) {
+                    dataOut.writeUTF("This key and value are successfully deleted.");
+                } else {
+                    dataOut.writeUTF("This key is not found.");
+                }
+            } else {
+                dataOut.writeUTF("ERROR: Usage: DELETE <key>");
+            }
+        }
+
+        private void handleGetRequest(String input, String clientSocketIP, int clientSocketPort) throws IOException {
+            ArrayList<String> parts = new ArrayList<>(Arrays.asList(input.split(" ")));
+            if (parts.size() == 2) {
+                String result = keyValStore.getOrDefault(parts.get(1), "This key is not found.");
+                dataOut.writeUTF(result);
+            } else {
+                dataOut.writeUTF("ERROR: Usage: GET <key>");
+            }
+        }
+
+        private void handleKeysRequest(String clientSocketIP, int clientSocketPort) throws IOException {
+            String allKeys = String.join(", ", keyValStore.keySet());
+            dataOut.writeUTF("KEYS: " + allKeys);
+        }
+
+        private void handleUpdateRequest(String input, String clientSocketIP, int clientSocketPort) throws IOException {
+            ArrayList<String> parts = new ArrayList<>(Arrays.asList(input.split(" ")));
+            if (parts.size() == 3) {
+                String key = parts.get(1);
+                if (keyValStore.containsKey(key)) {
+                    keyValStore.put(key, parts.get(2));
+                    dataOut.writeUTF("Value for key '" + key + "' updated successfully.");
+                } else {
+                    dataOut.writeUTF("Key '" + key + "' does not exist.");
+                }
+            } else {
+                dataOut.writeUTF("ERROR: Usage: UPDATE <key> <value>");
+            }
+        }
+
+        private void handleKickRequest(String inputLine) throws IOException {
+            ArrayList<String> parts = new ArrayList<>(Arrays.asList(inputLine.split(" ")));
+            if (parts.size() == 3) {
+                String ip = parts.get(1);
+                int port = Integer.parseInt(parts.get(2));
+                kickClient(ip, port);
+                dataOut.writeUTF("Client kicked successfully.");
+            } else {
+                dataOut.writeUTF("ERROR: Usage: KICK <ip> <port>");
+            }
+        }
+
+
+
+        private void kickClient(String ip, int port) {
+    for (ClientHandler handler : clientHandlers) {
+        if (handler.clientSocket.getInetAddress().getHostAddress().equals(ip) && handler.clientSocket.getPort() == port) {
+            handler.kick();
+            break;
+        }
+    }
+}
+
+
+        private String getCurrentTimeStamp() {
+            return DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").format(LocalDateTime.now());
+}
+    private String getLogHeader(String clientSocketIP, int clientSocketPort) {
+        return "[" + getCurrentTimeStamp() + "] " + clientSocketIP + ":" + clientSocketPort;
+    }}
+
+        public static void main(String[] args) {
+            int port = 12345;
+            try {
+                TCPServer server = new TCPServer(port);
+                server.start();
+            } catch (IOException e) {
+                System.out.println("Something went wrong with: " + port);
+                System.exit(-1);
+            }
+        }}
+        
