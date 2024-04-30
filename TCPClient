@@ -1,0 +1,115 @@
+import java.net.*;
+import java.io.*;
+import java.util.Scanner;
+
+public class TCPClient {
+
+    String QUIT = "QUIT";
+    String KEYS = "KEYS";
+    String PUT = "PUT";
+    String DELETE = "DELETE";
+    String GET = "GET";
+    String UPDATE = "UPDATE";
+    static String KICK = "KICK";
+
+    DataOutputStream dataOut;
+    DataInputStream dataIn;
+    Socket socket;
+
+    public TCPClient(String ipAddress, int port) throws IOException {
+        socket = new Socket(ipAddress, port);
+        dataOut = new DataOutputStream(socket.getOutputStream());
+        dataIn = new DataInputStream(socket.getInputStream());
+    }
+
+    private void handleGetRequest(String key) throws IOException {
+        dataOut.writeUTF(GET + " " + key);
+        System.out.println("Server: " + dataIn.readUTF());
+    }
+
+    private void handlePutRequest(String key, String value) throws IOException {
+        dataOut.writeUTF(PUT + " " + key + " " + value);
+        System.out.println("Server: " + dataIn.readUTF());
+    }
+
+    private void handleDelRequest(String key) throws IOException {
+        dataOut.writeUTF(DELETE + " " + key);
+        System.out.println("Server: " + dataIn.readUTF());
+    }
+
+    private void handleKeysRequest() throws IOException {
+        dataOut.writeUTF(KEYS);
+        System.out.println("Server: " + dataIn.readUTF());
+    }
+
+    private void handleUpdateRequest(String key, String value) throws IOException {
+        dataOut.writeUTF(UPDATE + " " + key + " " + value);
+        System.out.println("Server: " + dataIn.readUTF());
+    }
+
+    private void handleKickRequest(String input) throws IOException {
+        dataOut.writeUTF(KICK + " " + input);
+        System.out.println("Server: " + dataIn.readUTF());
+    }
+
+
+
+    private void cleanUp() throws IOException {
+        dataIn.close();
+        dataOut.close();
+        socket.close();
+    }
+
+    public static void main(String[] args) {
+        TCPClient client = null;
+        try {
+            client = new TCPClient("localhost", 12345);
+            Scanner scanner = new Scanner(System.in);
+            String userInput;
+
+            while (true) {
+                System.out.println("Enter command:\nPUT <key> <value>\nGET <key>\nDELETE <key>\nKEYS\nUPDATE <key> <value>\nKICK\nQUIT");
+
+                userInput = scanner.nextLine();
+                if (userInput == null || userInput.trim().isEmpty() || "QUIT".equalsIgnoreCase(userInput.trim())) {
+                    System.out.println("Exiting.");
+                    break;
+                }
+
+                String[] parts = userInput.split(" ");
+                if (parts.length > 0) {
+                    String cmd = parts[0].toUpperCase();
+                    if ("GET".equals(cmd)) {
+                        if (parts.length > 1) client.handleGetRequest(parts[1]);
+                        else System.out.println("ERROR: Usage: GET <key>");
+                    } else if ("PUT".equals(cmd)) {
+                        if (parts.length > 2) client.handlePutRequest(parts[1], parts[2]);
+                        else System.out.println("ERROR: Usage: PUT <key> <value>");
+                    } else if ("DELETE".equals(cmd)) {
+                        if (parts.length > 1) client.handleDelRequest(parts[1]);
+                        else System.out.println("ERROR: Usage: DELETE <key>");
+                    } else if ("KEYS".equals(cmd)) {
+                        client.handleKeysRequest();
+                    } else if ("UPDATE".equals(cmd)) {
+                        if (parts.length > 2) client.handleUpdateRequest(parts[1], parts[2]);
+                        else System.out.println("ERROR: Usage: UPDATE <key> <value>");
+                    } else if("KICK".equals(cmd)){
+                        if (parts.length > 1) client.handleKickRequest(userInput.substring(client.KICK.length() + 1));
+                        else System.out.println("ERROR: Usage: KICK <ip> <port>");
+                    } else {
+                        System.out.println("Incorrect command.");
+                    }
+                }
+            }
+            scanner.close();
+        } catch (IOException e) {
+            System.err.println("Something went wrong..");
+        } finally {
+            try {
+                if (client != null) client.cleanUp();
+            } catch (IOException e) {
+                System.err.println("Error cleaning up resources.");
+            }
+        }
+    }
+}
